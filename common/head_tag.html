@@ -1,0 +1,115 @@
+<script type="text/discourse-plugin" version="0.8.13">
+
+    const opts = {}
+
+    const load_res = (type, url) =>
+    {
+        let elem;
+        switch (type)
+        {
+            case 'css':
+                elem = document.createElement('link');
+                elem.rel = 'stylesheet';
+                elem.href = url;
+                break;
+            case 'script':
+                elem = document.createElement('script');
+                elem.type = 'text/javascript';
+            elem.src = url;
+                break;
+            default:
+                throw 'Invalid resource request';
+        }
+        return new Promise( (resolve, reject) => {
+            elem.onload = () => { resolve();}; //these absolutely have to be in curly braces, even with () omitted
+            elem.onerror = () => { reject(); };
+            document.head.appendChild(elem);
+        })
+    }
+    const debounce = (func, ms) => {
+        let timeout = null;
+        const wrapped = () => {
+            clearTimeout(timeout);
+            timeout = null;
+            func();
+        };
+        return () => {
+            if (timeout !== null)
+            {
+                clearTimeout(timeout);
+            }
+            timeout = setTimeout(wrapped, ms);
+        };
+    }; 
+    const simple_filter = (api, col) => {
+        const input = $('<input data-filter="true">');
+        input.on('change keyup', debounce(() => {
+            col
+                .search(input.val())
+                .draw()
+        }, 300));
+        input.on('click', (e) => e.stopPropagation()); //prevent clicking on input toggling sort
+        col.header().appendChild(input[0]);
+    };
+    //in the current discourse style, inputs are always rendered 210px which is a lot for skinny columns. We have a calculated width from dataTables, so copy that
+    const readjust_filters = (api) => {
+        api.columns().eq(0).each( idx => {
+            const header = api.column(idx).header();
+            const filter = header.querySelector('[data-filter]');
+            if (filter)
+            {
+                filter.style.width = header.style.width;
+            }
+        })
+    }
+    const inject_datatables = (datatables) => {
+        const defaults = {paging: false};
+        datatables.forEach(div => {
+            //copy all the data-dt* properties from the div (without the dt part) on top of defaults
+            //discourse seems to eat any thing before/including allowed separators like - which kills things like data-dt-paging
+            const decode_value = v => { try { return JSON.parse(v); } catch (e) { return v } };
+            const opt = Object.assign(
+                {},
+                defaults,
+                Object.entries(div.dataset).reduce((acc, [k, v]) => {  k.slice(0,2) == 'dt' ? acc[k.slice(2)] = decode_value(v) : null; return acc; }, {}) 
+            );
+            const filters = div.dataset.filters; //this could be complex string for each columns like "f,e,t,n" for simple filter, excel style, tag selectors, none
+            if (filters === "true") 
+            {
+                if (typeof opt.dom == 'undefined')
+                {
+                    opt.dom = 'lrtip'; //default is lfrtip, remove f[ilter] so no search box at the top
+                }
+                opt.initComplete = function () {
+                    const api = this.api();
+                    api.columns().eq(0).each( idx => {
+                        simple_filter(api, api.column(idx));
+                    });
+                    api.on('draw', () => readjust_filters(api));
+                    api.draw();
+                }
+            }
+            div.querySelectorAll('table').forEach( table => {
+                $(table).DataTable(opt);
+            })
+        })
+    };
+    let has_loaded_dt = null; //global promise even if api.decorateCooked called multiple times before its resolved
+    api.decorateCooked( elem => {
+        const datatables = elem[0].querySelectorAll("div[data-wrap=datatables]");
+        if (datatables.length > 0) //only load dataTables if there are datatables in the page
+        {
+            if (!has_loaded_dt)
+            {
+                has_loaded_dt = Promise.all([
+
+                ]);
+            }
+            has_loaded_dt.then( () => inject_datatables(datatables))
+            console.log(datatables)
+        }
+    }, opts);
+
+
+
+</script>
